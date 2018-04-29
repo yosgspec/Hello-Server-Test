@@ -1,0 +1,195 @@
+#runtime "hsp3cl"
+#include "hspsock.as"
+
+#module Program
+	#enum type=0	// GET ADDR HTTP
+	#enum connect	// Connection:
+	#enum accept	// Accept:
+	#enum agent		// User-Agent:
+	#enum encode	// Accept-Encoding:
+	#enum lang		// Accept-Language;
+	#enum ref		// Referer:
+	#enum data		// data
+	#enum reqLength
+
+	// 受信情報解析
+	#deffunc getHttpReq array req,var buf
+		sdim req,,reqLength
+		// 他にも種類は山ほどある
+
+		notesel buf
+		repeat notemax-1
+			noteget a,cnt
+			if cnt=0 {
+				req.type=a // 始めの１行
+			}
+			else:if cnt=notemax-1 {
+				// postメッセージなど
+				req.data=a
+			}
+			else {
+				getstr b,a,0,':'
+				i=strsize
+				b=getpath(b,16)
+	
+				// 小文字化して比較
+				if b="host" {}
+				else:if b="connection" {
+					req.connect=strmid(a,i,1024)
+				}
+				else:if b="accept" {
+					req.accept=strmid(a,i,1024)
+				}
+				else:if b="user-agent" {
+					req.agent=strmid(a,i,1024)
+				}
+				else:if b="accept-encoding" {
+					req.encode=strmid(a,i,1024)
+				}
+				else:if b="accept-language" {
+					req.lang=strmid(a,i,1024)
+				}
+				else:if b="referer" {
+					req.ref=strmid(a,i,1024)
+				}
+				else {
+					logmes "? ->"+a
+				}
+			}
+		loop
+		noteunsel
+	return
+
+	#deffunc resWrite str resText
+		sockput@ "HTTP/1.1 200 OK\nContent-Type: text/html\n\n"+resText
+	return	
+
+	#deffunc main
+		#const port 8888
+		sdim buff,5000: buffsize=0
+
+		while 1
+			// 初期化
+			sockmake@ ,port
+			if stat {
+				mes "sockmake error"+stat
+				sockclose@
+				_break
+			}
+
+			mes "isRunning"		
+			flreset=0
+			repeat
+				// Listen.
+				sockwait@
+				if stat=0 {
+					flreset=0
+					logmes "[sockwait]:0"
+	
+					// 取得待ち
+					sockcheck@
+					if stat {
+						mes "sockcheck break:"+stat
+						continue
+					}
+	
+					// 読み取り
+					sockget@ buff,5000
+					buffsize=stat
+					mes "[sockget]:"+stat
+	
+					// debugウィンドウに表示
+					logmes "[sockget]"
+					mes buff
+	
+					// 解析
+					sdim req
+					getHttpReq req,buff
+					sdim reqTypes,,3
+					split req.type," ",reqTypes
+					// URL整形
+					url=""
+					getstr url,reqTypes.1,0,'?'
+					url=getpath(url,16)
+	
+					// 返信
+					if url="/" {
+						resWrite {"<head>
+							<body>
+								<h2>index</h2>
+								<a href=\"time\">time</a>,
+								<a href=\"info\">info</a>,
+								<a href=\"form\">form</a>
+							</body>
+						</html>"}
+					}
+					else:if url="/time" {
+						resWrite strf({"<head>
+							<body>
+								<h2>%02d:%02d:%02d</h2>
+							</body>
+						</html>"},gettime(4),gettime(5),gettime(6))
+					}
+					else:if url="/info" {
+						resWrite strf({"<head>
+							<body>
+								<table border=1>
+									<tr>
+										<td>type</td>
+										<td>%s</td>
+									</tr><tr>
+										<td>referer</td>
+										<td>%s</td>
+									</tr><tr>
+										<td>user_agent</td>
+										<td>%s</td>
+									</tr>"},reqTypes.0,req.ref,req.agent)+strf({"
+									<tr>
+										<td>data</td>
+										<td>%s</td>
+									</tr>
+								</table>
+								<textarea rows=12 cols=60>%s</textarea>
+							</body>
+						</html>"},req.data,buff)
+					}
+					else:if url="/form" {
+						resWrite {"<head>
+							<body>
+								<form method=\"POST\" action=\"info\">
+									1<input type=\"text\" name=\"key1\">
+									2<input type=\"text\" name=\"key2\">
+									<input type=\"submit\">
+								</form>
+							</body>
+						</html>"}
+					}
+					else {
+						sockput@ "HTTP/1.1 404 Not Found\nConnection: close\nContent-Type: text/html\n\n"
+					}
+					logmes "[sockput]"+stat
+					
+				}
+				else:if stat>1 {
+					mes "[sockwait]ERROR:"+stat
+					//break
+					if flreset>2 {
+						mes "ERROR."
+						break
+					}
+					flreset++
+					// リセット
+					sockclose@
+					_continue
+				}
+				else {
+					flreset=0
+				}
+				wait 15
+			loop
+			sockclose@
+			_break
+		wend
+	return
+#global
+main

@@ -1,0 +1,38 @@
+#packopt name "server"
+#runtime "hsp3cl"
+#include "hspsock.as"
+
+#module Program
+	#deffunc main
+		#const port 8888
+		sockmake@ ,port
+		if stat {
+			mes "sockmake error"+stat
+			sockclose@
+			return
+		}
+		mes "Server Running Port:"+port
+		repeat
+			sockwait@
+			if stat=0 {
+				sockcheck@
+				if stat: continue
+				sdim req,$FFFF
+				sockget@ req,$FFFF
+				ipget@
+				mes refstr
+				reqsize=stat
+				sockput@ {"HTTP/1.1 200 OK
+					Content-Type: text/html
+					\n"}
+				sockput@ "Hello HSP Server"
+			}
+			else:if 1<stat {
+				sockclose@
+				sockmake@ ,port
+			}
+		loop
+		sockclose@
+	return
+#global
+main
